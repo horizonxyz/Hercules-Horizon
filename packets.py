@@ -413,7 +413,7 @@ def write_packet_handled_file(server_name, pvls, client_folder):
 				).format(client_type_macro(client_type).upper()))
 			count2 = 0
 			total2 = len(packets[packet_name][client_type].keys())
-			for vi, _id in enumerate(sorted(packets[packet_name][client_type].keys(), key=lambda x: sorted(len(packets[packet_name][client_type][x]), key=lambda x:int(x), reverse=False), reverse=True)):
+			for vi, _id in enumerate(sorted(packets[packet_name][client_type].keys(), key=lambda x: len(packets[packet_name][client_type][x]), reverse=True)):
 				total3 = len(packets[packet_name][client_type][_id])
 				if count2 >= 1:	
 					strings.append((
@@ -422,9 +422,9 @@ def write_packet_handled_file(server_name, pvls, client_folder):
 				if total3 > 0:
 					strings.append(( " && "))
 					if total3 > 1:
-						strings.append(( "(\\\n"))
+						strings.append(( "( \\\n"))
 					elif total3 == 1:
-						strings.append(( "\\\n"))
+						strings.append(( " \\\n"))
 					else:
 						strings.append(( "\n"))
 				else:
@@ -433,26 +433,51 @@ def write_packet_handled_file(server_name, pvls, client_folder):
 				for version in sorted(packets[packet_name][client_type][_id], key=lambda x:int(x), reverse=True):
 					#version operator is equal if the version is not a base version, because we provide both specific and minimum verisons.
 					# every statement is important here for the entire functioning of packet versioning in horizon.
-					if str(version)[-4:] == "0000": 
-						version_operator = ">="
+					base_version = str(version)[-4:] == "0000"
+					if base_version: 
+						has_prev_version = count3 != 0 # // for the 1st instance of PACKET_VERSION >= 20220000
+						if has_prev_version:
+							prev_version = sorted(packets[packet_name][client_type][_id], key=lambda x:int(x), reverse=True)[count3 - 1]
+							if count3 == 0:	# start of the list.
+								# if PACKET_VERSION >= 20060000 && PACKET_VERSION <= 20070000
+								strings.append((
+									"\tPACKET_VERSION >= {} && PACKET_VERSION < {}"
+								).format(int(version), int(prev_version)))
+							elif count3 < total3 - 1: # before the end of the list
+								strings.append((
+									"\t|| (PACKET_VERSION >= {} && PACKET_VERSION < {})"
+								).format(int(version), int(prev_version)))
+							else: # when count3 is equal to total3 (end of list)
+								strings.append((
+									"\t|| (PACKET_VERSION >= {} && PACKET_VERSION < {})"
+								).format(int(version), int(prev_version)))
+						elif has_prev_version and total3 > 1: # when there is no previous version and there are more versions
+							strings.append((
+								"\t|| PACKET_VERSION >= {} &&"
+							).format(int(version)))
+						elif not has_prev_version and total3 >= 1: # count3 == 0 therefore not has_prev_version only required here. Other cases are not required.
+							strings.append((
+								"\tPACKET_VERSION >= {}"
+							).format(int(version)))
+						else:
+							strings.append(("{} - {}".format(has_prev_version, total3)))
 					else: 
-						version_operator = "=="
-					if count3 == 0:	
-						strings.append((
-							"\tPACKET_VERSION {} {}"
-						).format(version_operator, int(version)))
-					elif count3 < total3 - 1:
-						strings.append((
-							"\t|| PACKET_VERSION {} {}"
-						).format(version_operator, int(version)))
-					else:
-						strings.append((
-							"\t|| PACKET_VERSION {} {}"
-						).format(version_operator, int(version)))
+						if count3 == 0:	
+							strings.append((
+								"\tPACKET_VERSION == {}"
+							).format(int(version)))
+						elif count3 < total3 - 1:
+							strings.append((
+								"\t|| PACKET_VERSION == {}"
+							).format(int(version)))
+						else:
+							strings.append((
+								"\t|| PACKET_VERSION == {}"
+							).format(int(version)))
 					if count3 == total3 - 1 and total3 > 1:
 						strings.append(( ")\n"))
 					elif total3 > 1:
-						strings.append(( "\\\n" ))
+						strings.append(( " \\\n" ))
 					else:
 						strings.append(( "\n" ))
 					count3+=1
@@ -495,9 +520,11 @@ def create_packet_definition_files(pvl, server):
 		f.close()
 
 def name_generator(CLIENTS, MIN_PACKET_VERSION, LAST_NAMED_COMMIT_VER, LAST_NAMED_COMMIT_YEAR, shuffle_files, len_files):
-	wd = os.getcwd()
-	os.chdir("../")
 	print("Checking out revision '" + LAST_NAMED_COMMIT_VER + "' for name generator!")
+	if not os.path.isdir("Hercules"):
+		print(subprocess.check_output(['git', 'clone', "https://www.github.com/HerculesWS/Hercules.git"]).decode('ascii'))
+	wd = os.getcwd()
+	os.chdir("Hercules")
 	print(subprocess.check_output(['git', 'checkout', LAST_NAMED_COMMIT_VER]).decode('ascii'))
 	os.chdir(wd)
 
@@ -509,7 +536,7 @@ def name_generator(CLIENTS, MIN_PACKET_VERSION, LAST_NAMED_COMMIT_VER, LAST_NAME
 	pvl['z'] = dict()
 	try:
 		for file in shuffle_files:
-			f = open("../src/map/" + file, "r")
+			f = open("Hercules/src/map/" + file, "r")
 	
 			lines = f.readlines()
 	
@@ -583,7 +610,7 @@ def name_generator(CLIENTS, MIN_PACKET_VERSION, LAST_NAMED_COMMIT_VER, LAST_NAME
 			if year > LAST_NAMED_COMMIT_YEAR:
 				continue
 
-			f = open("../src/common/packets/" + file, "r")
+			f = open("Hercules/src/common/packets/" + file, "r")
 			client_type = get_client_type(file)
 			if CLIENTS[client_type] == False:
 				continue
@@ -670,7 +697,7 @@ def name_generator(CLIENTS, MIN_PACKET_VERSION, LAST_NAMED_COMMIT_VER, LAST_NAME
 						found = rec.search(line)
 						if found:
 							packet_id = format(found.group(1))
-							rootdir = "../src"
+							rootdir = "Hercules/src"
 							regex = re.compile(packet_id)
 	
 							packet_id2 = "0x" + packet_id[3:]
@@ -681,7 +708,7 @@ def name_generator(CLIENTS, MIN_PACKET_VERSION, LAST_NAMED_COMMIT_VER, LAST_NAME
 	
 							for root, dirs, files in os.walk(rootdir):
 								for file in files:
-									if re.search("../src/map/packets", root) or re.search("../src/common/packets", root) or re.search("packet", file) or re.search("messages", file):
+									if re.search("Hercules/src/map/packets", root) or re.search("Hercules/src/common/packets", root) or re.search("packet", file) or re.search("messages", file):
 										continue
 									f = open(root + "/" + file, "r")
 									print("Searching for unknown packet {} in file {}".format(packet_id, root + "/" + file))
@@ -702,7 +729,7 @@ def name_generator(CLIENTS, MIN_PACKET_VERSION, LAST_NAMED_COMMIT_VER, LAST_NAME
 	print("Packet names have been dumped to 'names.out'...")
 
 def search_structs_file_for_packet(packet_id):
-	f = open("../src/map/packets_struct.h", "r")
+	f = open("Hercules/src/map/packets_struct.h", "r")
 	lines = f.readlines()
 	status("Reading for packet structs for packets in '{}'".format("packet_structs.h") + "")
 	for idx in range(0, len(lines)):
@@ -717,7 +744,7 @@ def search_structs_file_for_packet(packet_id):
 def packets_generator(CLIENTS, MIN_PACKET_VERSION, LAST_NAMED_COMMIT_YEAR, shuffle_files, len_files):
 	print("Checking out revision 'HEAD' for packets generator!")
 	wd = os.getcwd()
-	os.chdir("../")
+	os.chdir("Hercules")
 	subprocess.check_output(['git', 'checkout', 'stable']).decode('ascii')
 	os.chdir(wd)
 
@@ -744,7 +771,7 @@ def packets_generator(CLIENTS, MIN_PACKET_VERSION, LAST_NAMED_COMMIT_YEAR, shuff
 	
 				print("opening file " + file);
 				print(os.getcwd())
-				f = open("../src/common/packets/" + file, "r")
+				f = open("Hercules/src/common/packets/" + file, "r")
 				client_type = get_client_type(file)
 				if CLIENTS[client_type] == False:
 					continue
