@@ -358,7 +358,7 @@ def create_packet_length_files(pvl, server):
 			
 			f = open("Server/{}/Packets/{}/PacketLengthTable.hpp".format(server_name, client_folder), "w+")
 			f.write(get_legal())
-			f.write(write_packet_table_file(server_name, pvl[server][client]["0"], client_folder))
+			f.write(write_packet_table_file(server_name, pvl[server][client][sorted(pvl[server][client].keys(), key=lambda x:str(x))[0]], client_folder))
 			f.close()
 			
 			f = open("Server/{}/Packets/{}/ClientPacketLengthTable.hpp".format(server_name, client_folder), "w+")
@@ -413,7 +413,7 @@ def write_packet_handled_file(server_name, pvls, client_folder):
 				).format(client_type_macro(client_type).upper()))
 			count2 = 0
 			total2 = len(packets[packet_name][client_type].keys())
-			for vi, _id in enumerate(sorted(packets[packet_name][client_type].keys(), key=lambda x: sorted(packets[packet_name][client_type][x], key=lambda x:int(x), reverse=True), reverse=True)):
+			for vi, _id in enumerate(sorted(packets[packet_name][client_type].keys(), key=lambda x: sorted(len(packets[packet_name][client_type][x]), key=lambda x:int(x), reverse=False), reverse=True)):
 				total3 = len(packets[packet_name][client_type][_id])
 				if count2 >= 1:	
 					strings.append((
@@ -427,20 +427,28 @@ def write_packet_handled_file(server_name, pvls, client_folder):
 						strings.append(( "\\\n"))
 					else:
 						strings.append(( "\n"))
+				else:
+					strings.append("\n")
 				count3 = 0
 				for version in sorted(packets[packet_name][client_type][_id], key=lambda x:int(x), reverse=True):
+					#version operator is equal if the version is not a base version, because we provide both specific and minimum verisons.
+					# every statement is important here for the entire functioning of packet versioning in horizon.
+					if str(version)[-4:] == "0000": 
+						version_operator = ">="
+					else: 
+						version_operator = "=="
 					if count3 == 0:	
 						strings.append((
-							"\tPACKET_VERSION >= {}"
-						).format(int(version)))
+							"\tPACKET_VERSION {} {}"
+						).format(version_operator, int(version)))
 					elif count3 < total3 - 1:
 						strings.append((
-							"\t|| PACKET_VERSION >= {}"
-						).format(int(version)))
+							"\t|| PACKET_VERSION {} {}"
+						).format(version_operator, int(version)))
 					else:
 						strings.append((
-							"\t|| PACKET_VERSION >= {}"
-						).format(int(version)))
+							"\t|| PACKET_VERSION {} {}"
+						).format(version_operator, int(version)))
 					if count3 == total3 - 1 and total3 > 1:
 						strings.append(( ")\n"))
 					elif total3 > 1:
@@ -582,7 +590,7 @@ def name_generator(CLIENTS, MIN_PACKET_VERSION, LAST_NAMED_COMMIT_VER, LAST_NAME
 
 			ignore = False
 			status("Searching for packet lengths in '{}'...".format(file))
-			packet_version = 0
+			packet_version = int("{}0000".format(get_client_year(file)))
 			for line in f:
 				if line:
 					if re.match(r"^\/\/", line):
@@ -610,7 +618,7 @@ def name_generator(CLIENTS, MIN_PACKET_VERSION, LAST_NAMED_COMMIT_VER, LAST_NAME
 	
 					# Reset packet version to 0 (default) at the end of an if/else chain
 					if re.match("^#endif$", line):
-						packet_version = 0
+						packet_version = int("{}0000".format(get_client_year(file)))
 	
 					rec = re.compile("packetLen\(([x0-9A-Za-z]+), ([0-9-]+)\)[\s\/]+([A-Za-z0-9_]+)")
 	
@@ -743,7 +751,7 @@ def packets_generator(CLIENTS, MIN_PACKET_VERSION, LAST_NAMED_COMMIT_YEAR, shuff
 	
 				ignore = False
 				status("Searching for packet lengths in '{}'...".format(file))
-				packet_version = 0
+				packet_version = int("{}0000".format(get_client_year(file))) # this is the minimum client year that was captured, not 0. We dont default to zero.
 				for line in f:
 					if line:
 						if re.match(r"^\/\/", line):
@@ -771,7 +779,7 @@ def packets_generator(CLIENTS, MIN_PACKET_VERSION, LAST_NAMED_COMMIT_YEAR, shuff
 		
 						# Reset packet version to 0 (default) at the end of an if/else chain
 						if re.match("^#endif$", line):
-							packet_version = 0
+							packet_version = int("{}0000".format(get_client_year(file)))
 		
 						rec = re.compile("packetLen\(([x0-9A-Za-z]+), ([0-9-]+)\)")
 		
