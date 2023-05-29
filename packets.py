@@ -193,24 +193,35 @@ def find_packet_length(pvls, client_type, packet_id):
 				return pvls[client_type][version][packet_name]['len']
 	return ""
 
+def is_handled_packet(packet_name):
+	found = re.search(r"^CZ_|^CA_|^CH_|^CS_", packet_name)
+	return True if found else False
+
+def is_base_version(version):
+	return str(version)[-4:] == "0000"
+
+def create_base_version(year):
+	return int("{}0000".format(year))
+
 def write_packet_table_file(server_name, packets, client_folder):
 	strings = []
 	strings.append((
 		"#ifndef HORIZON_{server_namec}_{c}_PACKET_LENGTH_TABLE\n"
 		"#define HORIZON_{server_namec}_{c}_PACKET_LENGTH_TABLE\n"
 		"\n"
-		"#include \"Server\/Zone\/Packets\/HandlerPackets.hpp\"\n"
-		"#include \"Server\/Zone\/Packets\/TransmitterPackets.hpp\"\n"
+		"#include \"Core/Multithreading/LockedLookupTable.hpp\"\n"
+		"#include \"Server/{server_name}/Packets/HandledPackets.hpp\"\n"
+		"#include \"Server/{server_name}/Packets/TransmittedPackets.hpp\"\n"
 		"\n"
 		"namespace Horizon\n"
 		"{{\n"
-		"namespace Zone\n"
+		"namespace {server_name}\n"
 		"{{\n"
-		"	typedef std::shared_ptr<Base::NetworkPacketHandler<ZoneSession>> HPacketStructPtrType;\n"
-		"	typedef std::shared_ptr<Base::NetworkPacketTransmitter<ZoneSession>> TPacketStructPtrType;\n"
+		"	typedef std::shared_ptr<Base::NetworkPacketHandler<{server_name}Session>> HPacketStructPtrType;\n"
+		"	typedef std::shared_ptr<Base::NetworkPacketTransmitter<{server_name}Session>> TPacketStructPtrType;\n"
 		"	typedef std::pair<int16_t, HPacketStructPtrType> HPacketTablePairType;\n"
 		"	typedef std::pair<int16_t, TPacketStructPtrType> TPacketTablePairType;\n"
-	).format(server_namec=server_name.upper(), c=client_folder.upper()))
+	).format(server_name=server_name, server_namec=server_name.upper(), c=client_folder.upper()))
 
 	strings.append((
 		"/**\n"
@@ -219,17 +230,16 @@ def write_packet_table_file(server_name, packets, client_folder):
 		"class PacketLengthTable\n"
 		"{{\n"
 		"public:\n"
-		"	PacketLengthTable(std::shared_ptr<ZoneSession> s)\n"
+		"	PacketLengthTable(std::shared_ptr<{server_name}Session> s)\n"
 		"	: _session(s)\n"
 		"	{{\n"
 		"#define ADD_HPKT(i, j, k) _hpacket_length_table.insert(i, std::make_pair(j, std::make_shared<k>(s)))\n"
 		"#define ADD_TPKT(i, j, k) _tpacket_length_table.insert(i, std::make_pair(j, std::make_shared<k>(s)))\n"
-	))
+	).format(server_name=server_name))
 
 	s = ""
 	for pi, pn in enumerate(sorted(packets.keys())):
-		found = re.search(r"CZ_|CA_|CH_", pn)
-		if found:
+		if is_handled_packet(pn):
 			s += "\t\tADD_HPKT({}, {}, {});\n".format(packets[pn]['id'], packets[pn]['len'], pn)
 		else:
 			s += "\t\tADD_TPKT({}, {}, {});\n".format(packets[pn]['id'], packets[pn]['len'], pn)
@@ -243,7 +253,7 @@ def write_packet_table_file(server_name, packets, client_folder):
 		"\n"
 		"	~PacketLengthTable() {{ }}\n"
 		"\n"
-		"	std::shared_ptr<ZoneSession> get_session() {{ return _session.lock(); }}\n"
+		"	std::shared_ptr<{server_name}Session> get_session() {{ return _session.lock(); }}\n"
 		"\n"
 		"	HPacketTablePairType get_hpacket_info(uint16_t packet_id) {{ return _hpacket_length_table.at(packet_id); }}\n"
 		"	TPacketTablePairType get_tpacket_info(uint16_t packet_id) {{ return _tpacket_length_table.at(packet_id); }}\n"
@@ -251,13 +261,13 @@ def write_packet_table_file(server_name, packets, client_folder):
 		"protected:\n"
 		"	LockedLookupTable<uint16_t, HPacketTablePairType> _hpacket_length_table;\n"
 		"	LockedLookupTable<uint16_t, TPacketTablePairType> _tpacket_length_table;\n"
-		"	std::weak_ptr<ZoneSession> _session;\n"
+		"	std::weak_ptr<{server_name}Session> _session;\n"
 		"\n"
 		"}};\n"
 		"}}\n"
 		"}}\n"
 		"#endif /* HORIZON_{server_namec}_{c}_PACKET_LENGTH_TABLE */\n"
-	).format(server_namec=server_name.upper(), c=client_folder.upper()))
+	).format(server_name=server_name, server_namec=server_name.upper(), c=client_folder.upper()))
 
 	return "".join(strings)
 
@@ -267,10 +277,7 @@ def write_packet_shuffle_table_file(server_name, pvll, client_folder):
 		"#ifndef HORIZON_{server_namec}_CLIENT_PACKET_LENGTH_TABLE\n"
 		"#define HORIZON_{server_namec}_CLIENT_PACKET_LENGTH_TABLE\n"
 		"\n"
-		"\n"
-		"#include \"Default.hpp\"\n"
-		"\n"
-		"\n"
+		"#include \"PacketLengthTable.hpp\"\n"
 		"\n"
 		"namespace Horizon\n"
 		"{{\n"
@@ -283,43 +290,41 @@ def write_packet_shuffle_table_file(server_name, pvll, client_folder):
 		" * @brief Auto-generated with a python generator tool authored by Sephus (sagunxp@gmail.com).\n"
 		" */\n"
 		"class ClientPacketLengthTable : public PacketLengthTable\n"
-		"{\n"
+		"{{\n"
 		"public:\n"
-		"	ClientPacketLengthTable(std::shared_ptr<ZoneSession> s)\n"
+		"	ClientPacketLengthTable(std::shared_ptr<{server_name}Session> s)\n"
 		"	: PacketLengthTable(s)\n"
-		"	{\n"
+		"	{{\n"
 		"#define ADD_HPKT(i, j, k) _hpacket_length_table.insert(i, std::make_pair(j, std::make_shared<k>(s)))\n"
 		"#define ADD_TPKT(i, j, k) _tpacket_length_table.insert(i, std::make_pair(j, std::make_shared<k>(s)))\n"
-	))
+	).format(server_name=server_name))
 
 	total = len(pvll.keys())
-	count = 1; # not iterating over the first key (PacketVersion 0)
+	count = 0; # not iterating over the first key (base version)
 	for vi, version in enumerate(sorted(pvll.keys(), key=lambda x:str(x))):
 		packets = pvll[version]
 
-		if version == "0" or version == 0:
+		if is_base_version(version):
 			continue # handled separately in parent caller.
 		elif len(packets) == 0:
-			count += 1
 			continue
 
 		strings.append((
 			"// Packet Version {version}: {n} Packets\n"
 		).format(version=version, n=len(packets)))
 		
-		if count == 1:
+		if count == 0:
 			strings.append((
-				"#if PACKET_VERSION == {version}\n"
-			).format(version=version))
+				"#if PACKET_VERSION == {version} // {count}\n"
+			).format(version=version, count=count))
 		elif count != total:
 			strings.append((
-				"#elif PACKET_VERSION == {version}\n"
-			).format(version=version))
+				"#elif PACKET_VERSION == {version} // {count}\n"
+			).format(version=version, count=count))
 		
 		s = ""
 		for pi, pn in enumerate(sorted(packets.keys())):
-			found = re.search(r"CZ_|CA_|CH_", pn)
-			if found:
+			if is_handled_packet(pn):
 				s += "\t\tADD_HPKT(" + packets[pn]['id'] + ", " + packets[pn]['len'] +", " + pn + ");\n";
 			else:
 				s += "\t\tADD_TPKT(" + packets[pn]['id'] + ", " + packets[pn]['len'] +", " + pn + ");\n";
@@ -366,26 +371,17 @@ def create_packet_length_files(pvl, server):
 			f.write(write_packet_shuffle_table_file(server_name, pvl[server][client], client_folder))
 			f.close()
 
-def write_packet_handled_file(server_name, pvls, client_folder):
+def order_and_summarize_packet_definitions_header(pvls, server_name, handled=True):
 	strings = []
-	strings.append((
-		"#ifndef HORIZON_{server_namec}_TRANSMITTED_PACKETS_HPP\n"
-		"#define HORIZON_{server_namec}_TRANSMITTED_PACKETS_HPP\n"
-		"\n"
-		"#include \"Server/Common/Base/NetworkPacket.hpp\"\n"
-		"#include \"Server/Common/Configuration/Horizon.hpp\"\n"
-		"\n"
-		"namespace Horizon\n"
-		"{{\n"
-		"namespace Zone\n"
-		"{{\n"
-		"class ZoneSession;\n"
-	).format(server_name=server_name, server_namec=server_name.upper()))
 
 	packets = dict()
 	for ci, client_type in enumerate(sorted(pvls.keys())):
 		for vi, version in enumerate(pvls[client_type].keys()):
 			for pi, packet_name in enumerate(sorted(pvls[client_type][version].keys())):
+				if handled and not is_handled_packet(packet_name):
+					continue
+				elif not handled and is_handled_packet(packet_name):
+					continue
 				if not packet_name in packets:
 					packets[packet_name] = dict()
 				if not client_type in packets[packet_name]:
@@ -433,7 +429,7 @@ def write_packet_handled_file(server_name, pvls, client_folder):
 				for version in sorted(packets[packet_name][client_type][_id], key=lambda x:int(x), reverse=True):
 					#version operator is equal if the version is not a base version, because we provide both specific and minimum verisons.
 					# every statement is important here for the entire functioning of packet versioning in horizon.
-					base_version = str(version)[-4:] == "0000"
+					base_version = is_base_version(version)
 					if base_version: 
 						has_prev_version = count3 != 0 # // for the 1st instance of PACKET_VERSION >= 20220000
 						if has_prev_version:
@@ -453,7 +449,7 @@ def write_packet_handled_file(server_name, pvls, client_folder):
 								).format(int(version), int(prev_version)))
 						elif has_prev_version and total3 > 1: # when there is no previous version and there are more versions
 							strings.append((
-								"\t|| PACKET_VERSION >= {} &&"
+								"\t|| PACKET_VERSION >= {} &&" # Base Version
 							).format(int(version)))
 						elif not has_prev_version and total3 >= 1: # count3 == 0 therefore not has_prev_version only required here. Other cases are not required.
 							strings.append((
@@ -461,6 +457,11 @@ def write_packet_handled_file(server_name, pvls, client_folder):
 							).format(int(version)))
 						else:
 							strings.append(("{} - {}".format(has_prev_version, total3)))
+					elif not base_version and total3 == 1: # Keep as base if only one specific client has been found.
+						# count3 will be 0 in this step.
+						strings.append((
+							"\tPACKET_VERSION >= {}"
+						).format(int(version)))
 					else: 
 						if count3 == 0:	
 							strings.append((
@@ -474,10 +475,17 @@ def write_packet_handled_file(server_name, pvls, client_folder):
 							strings.append((
 								"\t|| PACKET_VERSION == {}"
 							).format(int(version)))
+					# When iteration over total3 (version list) has finished and pending the closing of 2 sections -
+					# 1) version list 2) client type list. 
 					if count3 == total3 - 1 and total3 > 1:
-						strings.append(( ")\n"))
+						if base_version: # if iteration is over base_version (using >= to compare) (avoid extra closing brace)
+							strings.append(( ")\n"))
+						else:
+							strings.append(( ")\n"))
+					# else if iteration is not completed and version list is more than one in length.
 					elif total3 > 1:
 						strings.append(( " \\\n" ))
+					# else if iteration is not completed or total3 is (greater than 1 - because we're inside loop) in length
 					else:
 						strings.append(( "\n" ))
 					count3+=1
@@ -487,19 +495,174 @@ def write_packet_handled_file(server_name, pvls, client_folder):
 				count2+=1
 			if count == total - 1:
 				strings.append((
+					"#else\n"
+					"ID_{} = 0x0000 // Disabled\n"
 					"#endif\n"
-				))
+				).format(packet_name, _id))
 			count+=1
 		strings.append((
 			"};\n"
 		))
 
+		if handled:
+			strings.append((
+				"/**\n"
+				" * @brief Main object for the aegis packet: {pn}\n"
+				" *\n"
+				" */ \n"
+				"class {pn} : public Base::NetworkPacketHandler<{server_name}Session>\n"
+				"{{\n"
+				"public:\n"
+				"	{pn}(std::shared_ptr<{server_name}Session> s)\n"
+				"	: NetworkPacketHandler<{server_name}Session>(ID_{pn}, s)\n"
+				"	{{}}\n"
+				"	virtual ~{pn}() {{}}\n"
+				"\n"
+				"	void handle(ByteBuffer &&buf);\n"
+				"	void deserialize(ByteBuffer &buf);\n"
+				"\n"
+				"/* Structure */\n"
+				"}};\n\n"
+			).format(pn=packet_name,server_name=server_name))
+		else:
+			strings.append((
+				"/**\n"
+				" * @brief Main object for the aegis packet: {pn}\n"
+				" *\n"
+				" */ \n"
+				"class {pn} : public Base::NetworkPacketTransmitter<{server_name}Session>\n"
+				"{{\n"
+				"public:\n"
+				"	{pn}(std::shared_ptr<{server_name}Session> s)\n"
+				"	: NetworkPacketTransmitter<{server_name}Session>(ID_{pn}, s)\n"
+				"	{{}}\n"
+				"	virtual ~{pn}() {{}}\n"
+				"\n"
+				"	void deliver();\n"
+				"	ByteBuffer &serialize();\n"
+				"\n"
+				"/* Structure */\n"
+				"}};\n\n"
+			).format(pn=packet_name,server_name=server_name))
+
 	return "".join(strings)
 
-def write_packet_transmitted_file(server_name, pvls, client_folder):
+def order_and_summarize_packet_definitions_source(pvls, handled=True):
 	strings = []
+
+	packets = list()
+	for ci, client_type in enumerate(sorted(pvls.keys())):
+		for vi, version in enumerate(pvls[client_type].keys()):
+			for pi, packet_name in enumerate(sorted(pvls[client_type][version].keys())):
+				if handled and not is_handled_packet(packet_name):
+					continue
+				elif not handled and is_handled_packet(packet_name):
+					continue
+				if len(packet_name.strip()) and not packet_name in packets:
+					packets.append(packet_name)
+
+	for packet_name in packets:
+		if handled:
+			strings.append((
+				"/**\n"
+				" * {pn}\n"
+				" */\n"
+				"void {pn}::handle(ByteBuffer &&buf) {{}}\n"
+				"void {pn}::deserialize(ByteBuffer &buf) {{}}\n"
+			).format(pn=packet_name))
+		else:
+			strings.append((
+			"/**\n"
+			" * {pn}\n"
+			" */\n"
+			"void {pn}::deliver() {{}}\n"
+			"ByteBuffer &{pn}::serialize()\n"
+			"{{\n"
+			"	return buf();\n"
+			"}}\n"
+		).format(pn=packet_name))
+
+	return "".join(strings)
+
+def write_packet_handled_file_header(server_name, pvls, client_folder):
+	strings = []
+	strings.append((
+		"#ifndef HORIZON_{server_namec}_HANDLED_PACKETS_HPP\n"
+		"#define HORIZON_{server_namec}_HANDLED_PACKETS_HPP\n"
+		"\n"
+		"#include \"Server/Common/Base/NetworkPacket.hpp\"\n"
+		"#include \"Server/Common/Configuration/Horizon.hpp\"\n"
+		"\n"
+		"namespace Horizon\n"
+		"{{\n"
+		"namespace {server_name}\n"
+		"{{\n"
+		"class {server_name}Session;\n"
+	).format(server_name=server_name, server_namec=server_name.upper()))
+
+	strings.append(order_and_summarize_packet_definitions_header(pvls, server_name))
+
+	strings.append((
+		"}} /* namespace {server_name} */\n"
+		"}} /* namespace Horizon */\n"
+		"#endif /* HORIZON_{server_namec}_TRANSMITTED_PACKETS_HPP */\n"
+		).format(server_name=server_name, server_namec=server_name.upper()))
+
+	return "".join(strings)
+
+def write_packet_handled_file_source(server_name, pvls, client_folder):
+	strings = []
+	strings.append((
+		"#include \"HandledPackets.hpp\"\n"
+		"#include \"Server/{server_name}/Session/{server_name}Session.hpp\"\n"
+		"\n"
+		"using namespace Horizon::{server_name};\n\n"
+	).format(server_name=server_name, server_namec=server_name.upper()))
+
+	strings.append(order_and_summarize_packet_definitions_source(pvls))
+
 	return "".join(strings)
 	
+def write_packet_transmitted_file_header(server_name, pvls, client_folder):
+	strings = []
+	strings.append((
+		"#ifndef HORIZON_{server_namec}_TRANSMITTED_PACKETS_HPP\n"
+		"#define HORIZON_{server_namec}_TRANSMITTED_PACKETS_HPP\n"
+		"\n"
+		"#include \"Server/Common/Base/NetworkPacket.hpp\"\n"
+		"#include \"Server/Common/Configuration/Horizon.hpp\"\n"
+		"\n"
+		"namespace Horizon\n"
+		"{{\n"
+		"namespace {server_name}\n"
+		"{{\n"
+		"class {server_name}Session;\n"
+	).format(server_name=server_name, server_namec=server_name.upper()))
+
+	strings.append(order_and_summarize_packet_definitions_header(pvls, server_name, handled=False))
+
+	strings.append((
+		"}} /* namespace {server_name}\n */"
+		"}} /* namespace Horizon */\n"
+		"#endif /* HORIZON_{server_namec}_TRANSMITTED_PACKETS_HPP */\n"
+		).format(server_name=server_name, server_namec=server_name.upper()))
+
+	return "".join(strings)
+
+def write_packet_transmitted_file_source(server_name, pvls, client_folder):
+	strings = []
+	strings.append((
+		"#include \"TransmittedPackets.hpp\"\n"
+		"#include \"Server/{server_name}/Session/{server_name}Session.hpp\"\n"
+		"#include \"Utility/Utility.hpp\"\n"
+		"\n"
+		"using namespace Horizon::{server_name};\n\n"
+	).format(server_name=server_name, server_namec=server_name.upper()))
+
+	strings.append(order_and_summarize_packet_definitions_source(pvls, handled=False))
+
+	return "".join(strings)
+
 def create_packet_definition_files(pvl, server):
 	server_name = get_server_name(server)
 	print("Writing packet definition files")
@@ -510,13 +673,26 @@ def create_packet_definition_files(pvl, server):
 		print("Writing Server/{}/Packets/HandledPackets.hpp".format(server_name))
 		f = open("Server/{}/Packets/HandledPackets.hpp".format(server_name), "w+")
 		f.write(get_legal())
-		f.write(write_packet_handled_file(server_name, pvl[server], client_folder))
+		f.write(write_packet_handled_file_header(server_name, pvl[server], client_folder))
+		f.close()
+
+		
+		print("Writing Server/{}/Packets/HandledPackets.cpp".format(server_name))
+		f = open("Server/{}/Packets/HandledPackets.cpp".format(server_name), "w+")
+		f.write(get_legal())
+		f.write(write_packet_handled_file_source(server_name, pvl[server], client_folder))
 		f.close()
 		
 		print("Writing Server/{}/Packets/TransmittedPackets.hpp".format(server_name))
 		f = open("Server/{}/Packets/TransmittedPackets.hpp".format(server_name), "w+")
 		f.write(get_legal())
-		f.write(write_packet_transmitted_file(server_name, pvl[server], client_folder))
+		f.write(write_packet_transmitted_file_header(server_name, pvl[server], client_folder))
+		f.close()
+
+		print("Writing Server/{}/Packets/TransmittedPackets.cpp".format(server_name))
+		f = open("Server/{}/Packets/TransmittedPackets.cpp".format(server_name), "w+")
+		f.write(get_legal())
+		f.write(write_packet_transmitted_file_source(server_name, pvl[server], client_folder))
 		f.close()
 
 def name_generator(CLIENTS, MIN_PACKET_VERSION, LAST_NAMED_COMMIT_VER, LAST_NAMED_COMMIT_YEAR, shuffle_files, len_files):
@@ -617,7 +793,7 @@ def name_generator(CLIENTS, MIN_PACKET_VERSION, LAST_NAMED_COMMIT_VER, LAST_NAME
 
 			ignore = False
 			status("Searching for packet lengths in '{}'...".format(file))
-			packet_version = int("{}0000".format(get_client_year(file)))
+			packet_version = create_base_version(get_client_year(file))
 			for line in f:
 				if line:
 					if re.match(r"^\/\/", line):
@@ -645,7 +821,7 @@ def name_generator(CLIENTS, MIN_PACKET_VERSION, LAST_NAMED_COMMIT_VER, LAST_NAME
 	
 					# Reset packet version to 0 (default) at the end of an if/else chain
 					if re.match("^#endif$", line):
-						packet_version = int("{}0000".format(get_client_year(file)))
+						packet_version = create_base_version(get_client_year(file))
 	
 					rec = re.compile("packetLen\(([x0-9A-Za-z]+), ([0-9-]+)\)[\s\/]+([A-Za-z0-9_]+)")
 	
@@ -778,7 +954,7 @@ def packets_generator(CLIENTS, MIN_PACKET_VERSION, LAST_NAMED_COMMIT_YEAR, shuff
 	
 				ignore = False
 				status("Searching for packet lengths in '{}'...".format(file))
-				packet_version = int("{}0000".format(get_client_year(file))) # this is the minimum client year that was captured, not 0. We dont default to zero.
+				packet_version = create_base_version(get_client_year(file)) # this is the minimum client year that was captured, not 0. We dont default to zero.
 				for line in f:
 					if line:
 						if re.match(r"^\/\/", line):
@@ -806,7 +982,7 @@ def packets_generator(CLIENTS, MIN_PACKET_VERSION, LAST_NAMED_COMMIT_YEAR, shuff
 		
 						# Reset packet version to 0 (default) at the end of an if/else chain
 						if re.match("^#endif$", line):
-							packet_version = int("{}0000".format(get_client_year(file)))
+							packet_version = create_base_version(get_client_year(file))
 		
 						rec = re.compile("packetLen\(([x0-9A-Za-z]+), ([0-9-]+)\)")
 		
