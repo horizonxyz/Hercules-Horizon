@@ -300,7 +300,6 @@ def write_packet_shuffle_table_file(server_name, pvll, client_folder):
 	).format(server_name=server_name))
 
 	total = len(pvll.keys())
-	count = 0; # not iterating over the first key (base version)
 	for vi, version in enumerate(sorted(pvll.keys(), key=lambda x:str(x))):
 		packets = pvll[version]
 
@@ -313,15 +312,10 @@ def write_packet_shuffle_table_file(server_name, pvll, client_folder):
 			"// Packet Version {version}: {n} Packets\n"
 		).format(version=version, n=len(packets)))
 		
-		if count == 0:
-			strings.append((
-				"#if PACKET_VERSION == {version} // {count}\n"
-			).format(version=version, count=count))
-		elif count != total:
-			strings.append((
-				"#elif PACKET_VERSION == {version} // {count}\n"
-			).format(version=version, count=count))
-		
+		strings.append((
+			"#if PACKET_VERSION >= {version}\n"
+		).format(version=version))
+
 		s = ""
 		for pi, pn in enumerate(sorted(packets.keys())):
 			if is_handled_packet(pn):
@@ -329,11 +323,9 @@ def write_packet_shuffle_table_file(server_name, pvll, client_folder):
 			else:
 				s += "\t\tADD_TPKT(" + packets[pn]['id'] + ", " + packets[pn]['len'] +", " + pn + ");\n";
 		strings.append(s)
-		count += 1
-
-	strings.append((
-		"#endif\n"
-	))
+		strings.append((
+			"#endif\n"
+		))
 	
 	strings.append((
 		"#undef ADD_TPKT\n"
@@ -409,7 +401,7 @@ def order_and_summarize_packet_definitions_header(pvls, server_name, handled=Tru
 				).format(client_type_macro(client_type).upper()))
 			count2 = 0
 			total2 = len(packets[packet_name][client_type].keys())
-			for vi, _id in enumerate(sorted(packets[packet_name][client_type].keys(), key=lambda x: len(packets[packet_name][client_type][x]), reverse=True)):
+			for vi, _id in enumerate(sorted(packets[packet_name][client_type].keys(), key=lambda x: packets[packet_name][client_type][x][0], reverse=False)):
 				total3 = len(packets[packet_name][client_type][_id])
 				if count2 >= 1:	
 					strings.append((
@@ -462,6 +454,15 @@ def order_and_summarize_packet_definitions_header(pvls, server_name, handled=Tru
 						strings.append((
 							"\tPACKET_VERSION >= {}"
 						).format(int(version)))
+					elif not base_version and int(sorted(packets[packet_name][client_type][_id], key=lambda x:int(x), reverse=True)[0]) - int(version) >= 10000:
+						if  total3 > 1:
+							strings.append((
+								"\t|| PACKET_VERSION >= {}"
+							).format(int(version)))
+						else:
+							strings.append((
+								"\tPACKET_VERSION >= {}"
+							).format(int(version)))
 					else: 
 						if count3 == 0:	
 							strings.append((
