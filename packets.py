@@ -303,18 +303,21 @@ def write_packet_shuffle_table_file(server_name, pvll, client_folder):
 	for vi, version in enumerate(sorted(pvll.keys(), key=lambda x:str(x))):
 		packets = pvll[version]
 
-		if is_base_version(version):
-			continue # handled separately in parent caller.
-		elif len(packets) == 0:
+		if len(packets) == 0:
 			continue
 
 		strings.append((
 			"// Packet Version {version}: {n} Packets\n"
 		).format(version=version, n=len(packets)))
 		
-		strings.append((
-			"#if PACKET_VERSION >= {version}\n"
-		).format(version=version))
+		if is_base_version(version):
+			strings.append((
+				"#if PACKET_VERSION >= {version}\n"
+			).format(version=version))
+		else:
+			strings.append((
+				"#if PACKET_VERSION == {version}\n"
+			).format(version=version))
 
 		s = ""
 		for pi, pn in enumerate(sorted(packets.keys())):
